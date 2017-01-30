@@ -27,7 +27,7 @@ while len(playerlist) > 1:
 
     for player2 in playerlist:
 
-        if not found and player1[3 + player2[0]] == "-":
+        if not found and player1[2 + player2[0]] == "-":
 
             print player1[1] + "\t-\t" + player2[1]
             playerlist.remove(player2)
