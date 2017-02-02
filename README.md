@@ -11,6 +11,8 @@ This algorithm does **NOT** grant valid pairings for all players. Repeated pairi
 
 # Usage
 
+`$ python swiss-tournament.py inputFile`
+
 Input files are composed of one line for each player. Lines have tab separated values:
 - Player name (string containing anything but tabs)
 - Score (integer or real)
