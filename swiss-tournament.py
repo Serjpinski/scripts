@@ -11,7 +11,7 @@ if len(argv) < 2:
     print "usage: python swiss-tournament.py playerlist"
     exit(1)
 
-playerlist = [[index] + split(line, sep = '\t') for index, line in enumerate(open(argv[1]))]
+playerlist = [[index] + split(line[0:-1], sep = '\t') for index, line in enumerate(open(argv[1]))]
 
 for player in playerlist:
     player[2] = float(player[2])
@@ -19,6 +19,7 @@ for player in playerlist:
 shuffle(playerlist)
 
 playerlist = sorted(playerlist, key = itemgetter(2), reverse = True)
+print playerlist
 
 while len(playerlist) > 1:
 
@@ -27,7 +28,7 @@ while len(playerlist) > 1:
 
     for player2 in playerlist:
 
-        if not found and player1[2 + player2[0]] == "-":
+        if not found and player1[3 + player2[0]] == "-":
 
             print player1[1] + "\t-\t" + player2[1]
             playerlist.remove(player2)
