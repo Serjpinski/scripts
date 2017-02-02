@@ -19,7 +19,6 @@ for player in playerlist:
 shuffle(playerlist)
 
 playerlist = sorted(playerlist, key = itemgetter(2), reverse = True)
-print playerlist
 
 while len(playerlist) > 1:
 
