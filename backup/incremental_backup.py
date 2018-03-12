@@ -47,10 +47,13 @@ def syncFile(src, dst, mode):
 
     if mode == "add":
         printWithElapsedTime("Add > " + src)
+        processing = src
     elif mode == "update":
-        printWithElapsedTime("Upd > " + src)
+        printWithElapsedTime("Upd > " + dst)
+        processing = dst
     else:
         printWithElapsedTime("Del > " + dst)
+        processing = dst
 
     if mode != "add":
         if os.path.isfile(dst):
