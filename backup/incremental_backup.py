@@ -1,147 +1,174 @@
-##############################
+########################################
 # Simple script that performs an incremental, one-directional backup between two folders.
 # File comparison is done by checking last update date and size of the file.
-##############################
+########################################
 
 import os
 import shutil
 import time
 
-########### GLOBAL ###########
+######## HIDDEN ITEM DETECTION #########
+# Code from https://stackoverflow.com/a/14063074
 
-rootSrc = "D:"
-rootDst = "E:"
+if os.name == 'nt':
+    import win32api, win32con # pip install pywin32
+
+def itemIsHidden(p):
+    if os.name== 'nt':
+        attribute = win32api.GetFileAttributes(p)
+        return attribute & (win32con.FILE_ATTRIBUTE_HIDDEN | win32con.FILE_ATTRIBUTE_SYSTEM)
+    else:
+        return p.startswith('.') # linux-osx
+
+################ GLOBAL ################
+
+rootSrc = "E:/"
+rootDst = "D:/"
 errorLogFile = "C:/BACKUP ERROR.txt"
 backupLogName = "backup_log.txt"
 backupLogFile = os.path.join(rootDst, backupLogName)
 
+toAdd = []
+toDelete = []
+
 added = 0
-updated = 0
 deleted = 0
 ignored = 0
+
 processing = None
 status = "FAILED"
 
 startTime = time.time()
 
-########### FUNC ###########
+################# FUNC #################
 
 def getElapsedTime():
-    global startTime
-    return time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
+	global startTime
+	return time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 
 def printWithElapsedTime(line):
-    print("[" + getElapsedTime() + "] " + line)
+	print("[" + getElapsedTime() + "] " + line)
 
 def logError(line):
-    with open(errorLogFile, "a") as error_log:
-        error_log.write(line + '\n')
+	with open(errorLogFile, "a") as error_log:
+		error_log.write(line + '\n')
 
-# Deletes item from dst, copies item from src, or both
-def syncFile(src, dst, mode):
+# Compute difference of contents from src to dst. Performs recursive calls for matching items on src and dst.
+def diff(src, dst, depth):
 
-    global processing
-    global added
-    global updated
-    global deleted
+	global backupLogName
+	global ignored
 
-    if mode == "add":
-        printWithElapsedTime("Add > " + src)
-        processing = src
-    elif mode == "update":
-        printWithElapsedTime("Upd > " + dst)
-        processing = dst
-    else:
-        printWithElapsedTime("Del > " + dst)
-        processing = dst
+	# Ignore hidden files except root source and destination (that allows backing up device root folders)
+	if depth > 0 and (itemIsHidden(src) or itemIsHidden(dst)):
+		ignored += 1
+		return
 
-    if mode != "add":
-        if os.path.isfile(dst):
-            os.remove(dst)
-        else:
-            shutil.rmtree(dst)
+	# Both are files
+	if os.path.isfile(src) and os.path.isfile(dst):
 
-    if mode != "delete":
-        if os.path.isfile(src):
-            shutil.copy2(src, dst)
-        else:
-            shutil.copytree(src, dst)
+		srcStats = os.stat(src)
+		dstStats = os.stat(dst)
 
-    processing = None
+		# File was modified or size is different
+		if srcStats.st_mtime != dstStats.st_mtime or srcStats.st_size != dstStats.st_size:
+			toDelete.append(dst)
+			toAdd.append((src, dst))
+		else:
+			ignored += 1
 
-    if mode == "add":
-        added += 1
-    elif mode == "update":
-        updated += 1
-    else:
-        deleted += 1
+	# One of them is a file and the other a folder
+	elif os.path.isfile(src) or os.path.isfile(dst):
+		toDelete.append(dst)
+		toAdd.append((src, dst))
 
-# Syncs contents on src to dst. Performs recursive calls for matching items on src and dst.
-def syncRec(src, dst):
+	# Both are folders
+	else:
+		src_items = os.listdir(src);
+		dst_items = os.listdir(dst);
 
-    global backupLogName
-    global ignored
+		for item in src_items:
+			if item in dst_items:
+				# Item is on both src and dst
+				diff(os.path.join(src, item), os.path.join(dst, item), depth + 1)
+			else:
+				# Item is only on src
+				toAdd.append((os.path.join(src, item), os.path.join(dst, item)))
 
-    # Both are files
-    if os.path.isfile(src) and os.path.isfile(dst):
+		for item in dst_items:
+			if item != backupLogName and item not in src_items:
+				# Item is only on dst and not backup_log
+				toDelete.append(os.path.join(dst, item))
 
-        srcStats = os.stat(src)
-        dstStats = os.stat(dst)
+# Deletes item from dst
+def delete(dst):
 
-        # File was modified or size is different
-        if srcStats.st_mtime != dstStats.st_mtime or srcStats.st_size != dstStats.st_size:
-            syncFile(src, dst, "update")
-        else:
-            ignored += 1
+	global processing
+	global deleted
 
-    # One of them is a file and the other a folder
-    elif os.path.isfile(src) or os.path.isfile(dst):
-        syncFile(src, dst, "update")
+	printWithElapsedTime("Del > " + dst)
+	processing = dst
 
-    # Both are folders
-    else:
-        src_items = os.listdir(src);
-        dst_items = os.listdir(dst);
+	if os.path.isfile(dst):
+		os.remove(dst)
+	else:
+		shutil.rmtree(dst)
 
-        for item in src_items:
-            if item in dst_items:
-                # Item is on both src and dst
-                syncRec(os.path.join(src, item), os.path.join(dst, item))
-            else:
-                # Item is only on src
-                syncFile(os.path.join(src, item), os.path.join(dst, item), "add")
+	processing = None
+	deleted += 1
 
-        for item in dst_items:
-            if item != backupLogName and item not in src_items:
-                # Item is only on dst and not backup_log
-                syncFile(os.path.join(src, item), os.path.join(dst, item), "delete")
+# Copies item from src to dst
+def add(src, dst):
 
-########### MAIN ###########
+	global processing
+	global added
+
+	printWithElapsedTime("Add > " + dst)
+	processing = dst
+
+	if os.path.isfile(src):
+		shutil.copy2(src, dst)
+	else:
+		shutil.copytree(src, dst)
+
+	processing = None
+	added += 1
+
+################# MAIN #################
 
 timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(startTime))
 printWithElapsedTime("Starting backup on " + timestamp)
 
 if backupLogName in os.listdir(rootSrc):
-    logError("[" + timestamp + "] Backup log found on source folder: " + rootSrc)
-    printWithElapsedTime("Backup log found on source folder: " + rootSrc)
-    exit(1)
+	logError("[" + timestamp + "] Backup log found on source folder: " + rootSrc)
+	printWithElapsedTime("Backup log found on source folder: " + rootSrc)
+	exit(1)
 
 if backupLogName not in os.listdir(rootDst):
-    logError("[" + timestamp + "] Backup log not found on destination folder: " + rootDst)
-    printWithElapsedTime("Backup log not found on destination folder: " + rootDst)
-    exit(2)
+	logError("[" + timestamp + "] Backup log not found on destination folder: " + rootDst)
+	printWithElapsedTime("Backup log not found on destination folder: " + rootDst)
+	exit(2)
 
 try:
-    syncRec(rootSrc, rootDst)
-    status = "OK"
-    printWithElapsedTime("Finished backup")
-    exit(0)
+	printWithElapsedTime("Computing differences...")
+	diff(rootSrc, rootDst, 0)
+	printWithElapsedTime(str(len(toAdd)) + " additions, " + str(len(toDelete)) + " deletions")
+
+	for deletion in toDelete:
+		delete(deletion)
+
+	for addition in toAdd:
+		add(addition[0], addition[1])
+
+	status = "OK"
+	printWithElapsedTime("Finished backup")
+	exit(0)
 
 except Exception as e:
-    logError("[" + timestamp + "] Unknown exception: " + str(e))
-    printWithElapsedTime("Unknown exception: " + str(e))
-    exit(3)
+	logError("[" + timestamp + "] Unknown exception: " + str(e))
+	printWithElapsedTime("Unknown exception: " + str(e))
+	exit(3)
 
 finally:
-    with open(backupLogFile, "a") as backup_log:
-        backup_log.write('{"timestamp": "' + timestamp + '", "status": "' + status + '", "elapsed": "' + getElapsedTime() + '", "added": "' + str(added) + '", "updated": "' + str(updated) + '", "deleted": "' + str(deleted) + '", "ignored": "' + str(ignored) + '", "failed": "' + str(processing) + '"}\n')
+	with open(backupLogFile, "a") as backup_log:
+		backup_log.write('{"timestamp": "' + timestamp + '", "status": "' + status + '", "elapsed": "' + getElapsedTime() + '", "added": "' + str(added) + '", "deleted": "' + str(deleted) + '", "ignored": "' + str(ignored) + '", "failed": "' + str(processing) + '"}\n')
